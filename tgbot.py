@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 YANDEX_TOKEN = os.getenv("YANDEX_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_ID = int(os.getenv("ADMIN_ID", 0)) 
 
 # Инициализация Яндекс.Диска
 y = yadisk.YaDisk(token=YANDEX_TOKEN)
@@ -31,7 +31,7 @@ y = yadisk.YaDisk(token=YANDEX_TOKEN)
     EVENT_NAME, EVENT_DATE, EVENT_TIME, EVENT_DETAILS
 ) = range(12)
 
-# Константы
+# Стоимости курсов
 COURSES = {
     "intensive": 34000,
     "basic": 72000,
@@ -73,29 +73,6 @@ def save_to_table(data, table_path):
     y.upload(temp_file, table_path, overwrite=True)
     os.remove(temp_file)
 
-# ... (импорты остаются без изменений)
-
-# Добавьте недостающие обработчики
-async def get_name(update: Update, context: CallbackContext) -> int:
-    context.user_data["name"] = update.message.text
-    await update.message.reply_text("Введите вашу фамилию:")
-    return SURNAME
-
-async def get_surname(update: Update, context: CallbackContext) -> int:
-    context.user_data["surname"] = update.message.text
-    await update.message.reply_text("Введите ваш номер телефона:")
-    return PHONE
-
-async def get_phone(update: Update, context: CallbackContext) -> int:
-    context.user_data["phone"] = update.message.text
-    await update.message.reply_text("Откуда вы узнали о школе?")
-    return SOURCE
-
-async def get_source(update: Update, context: CallbackContext) -> int:
-    context.user_data["source"] = update.message.text
-    await update.message.reply_text("Загрузите ваше фото:")
-    return PHOTO
-
 async def notify_admin(context, message, photo_url=None):
     """Отправляет уведомление администратору"""
     try:
@@ -124,7 +101,32 @@ async def start(update: Update, context: CallbackContext):
         await update.message.reply_text("Добро пожаловать! Давайте зарегистрируем вас.\nВведите ваше имя:")
         return NAME
 
-async def get_photo(update: Update, context: CallbackContext):
+async def get_name(update: Update, context: CallbackContext) -> int:
+    """Обработка имени"""
+    context.user_data["name"] = update.message.text
+    await update.message.reply_text("Введите вашу фамилию:")
+    return SURNAME
+
+async def get_surname(update: Update, context: CallbackContext) -> int:
+    """Обработка фамилии"""
+    context.user_data["surname"] = update.message.text
+    await update.message.reply_text("Введите ваш номер телефона:")
+    return PHONE
+
+async def get_phone(update: Update, context: CallbackContext) -> int:
+    """Обработка телефона"""
+    context.user_data["phone"] = update.message.text
+    await update.message.reply_text("Откуда вы узнали о школе?")
+    return SOURCE
+
+async def get_source(update: Update, context: CallbackContext) -> int:
+    """Обработка источника информации"""
+    context.user_data["source"] = update.message.text
+    await update.message.reply_text("Загрузите ваше фото:")
+    return PHOTO
+
+async def get_photo(update: Update, context: CallbackContext) -> int:
+    """Обработка фото"""
     try:
         photo = await update.message.photo[-1].get_file()
         local_path = f"temp/{update.message.message_id}.jpg"
@@ -157,68 +159,44 @@ async def get_photo(update: Update, context: CallbackContext):
         await update.message.reply_text("❌ Ошибка обработки платежа")
         return ConversationHandler.END
 
-async def handle_admin_reply(update: Update, context: CallbackContext):
-    """Обработка ответов администратора на платежи"""
-    try:
-        if update.message.reply_to_message and update.message.from_user.id == ADMIN_ID:
-            # Парсим сумму из сообщения
-            amount = int(update.message.text)
-            
-            # Получаем user_id из оригинального сообщения
-            original_text = update.message.reply_to_message.text
-            user_id = int(original_text.split("ID: ")[1].split("\n")[0])
-            
-            # Обновляем баланс в таблице
-            temp_file = "temp_students.xlsx"
-            y.download("/Таблицы/Студенты.xlsx", temp_file)
-            df = pd.read_excel(temp_file)
-            
-            df.loc[df["user_id"] == user_id, "Баланс"] += amount
-            df.to_excel(temp_file, index=False)
-            y.upload(temp_file, "/Таблицы/Студенты.xlsx", overwrite=True)
-            os.remove(temp_file)
-            
-            # Уведомляем студента
-            new_balance = df.loc[df["user_id"] == user_id, "Баланс"].values[0]
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"✅ Ваш баланс пополнен на {amount} руб!\nНовый баланс: {new_balance} руб",
-                reply_markup=PROFILE_KEYBOARD
-            )
-            
-            await update.message.reply_text("💰 Баланс успешно обновлен!")
-    except Exception as e:
-        logger.error(f"Ошибка обработки платежа админом: {str(e)}")
+async def get_course(update: Update, context: CallbackContext) -> int:
+    """Обработка выбора курса"""
+    query = update.callback_query
+    await query.answer()
+    course = query.data
+    context.user_data["course"] = course
+    context.user_data["balance"] = -COURSES[course]
 
-async def show_events(update: Update, context: CallbackContext):
-    """Показывает список событий"""
-    try:
-        temp_file = "temp_events.xlsx"
-        y.download("/Таблицы/События.xlsx", temp_file)
-        df = pd.read_excel(temp_file)
-        
-        if df.empty:
-            await update.callback_query.message.reply_text("На ближайшее время событий нет.")
-            return
-        
-        events_list = []
-        for _, row in df.iterrows():
-            events_list.append(
-                f"📅 {row['Дата']} {row['Время']}\n"
-                f"🏷 {row['Название']}\n"
-                f"📝 {row['Описание']}\n"
-            )
-            
-        await update.callback_query.message.reply_text("\n\n".join(events_list))
-        
-    except Exception as e:
-        logger.error(f"Ошибка показа событий: {str(e)}")
-        await update.callback_query.message.reply_text("❌ Ошибка загрузки событий")
+    # Сохраняем данные студента
+    student_data = {
+        "Имя": context.user_data["name"],
+        "Фамилия": context.user_data["surname"],
+        "Телефон": context.user_data["phone"],
+        "Курс": course,
+        "Баланс": -COURSES[course],
+        "user_id": query.from_user.id
+    }
+    
+    save_to_table(student_data, "/Таблицы/Студенты.xlsx")
+    
+    # Уведомление администратору
+    await notify_admin(
+        context,
+        f"🎓 Новый студент:\n{student_data['Имя']} {student_data['Фамилия']}\n"
+        f"Курс: {course}\nБаланс: {student_data['Баланс']} руб",
+        y.get_download_link(f"/Фото студентов/{context.user_data['name']}_{context.user_data['surname']}.jpg")
+    )
+    
+    await query.message.reply_text(
+        "Регистрация завершена! 🎉",
+        reply_markup=PROFILE_KEYBOARD
+    )
+    return ConversationHandler.END
 
-def main():
+def main() -> None:
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # Регистрация студента
+    # Обработчик регистрации
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -232,15 +210,11 @@ def main():
         fallbacks=[]
     )
 
-    # Обработчики кнопок
-    application.add_handler(CallbackQueryHandler(show_events, pattern="^events$"))
-    application.add_handler(MessageHandler(filters.TEXT & filters.user(ADMIN_ID), handle_admin_reply))
-
     application.add_handler(conv_handler)
     application.run_polling()
 
 if __name__ == "__main__":
-    # Создаем необходимые папки при первом запуске
+    # Создаем необходимые папки на Яндекс.Диске
     for folder in ["Фото студентов", "Платежи", "Таблицы"]:
         if not y.exists(folder):
             y.mkdir(folder)
