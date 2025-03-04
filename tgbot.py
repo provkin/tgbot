@@ -133,70 +133,67 @@ async def get_photo(update: Update, context: CallbackContext) -> int:
         os.makedirs("temp", exist_ok=True)
         await photo.download_to_drive(local_path)
         
-        # Формируем уникальное имя файла
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_name = f"{context.user_data['name']}_{context.user_data['surname']}_{timestamp}.jpg"
-        
-        # Сохраняем в папку Платежи
-        y.upload(local_path, f"/Платежи/{file_name}")
+        y.upload(local_path, f"/Фото студентов/{file_name}")
         os.remove(local_path)
         
-        # Формируем сообщение админу
-        admin_msg = (
-            f"💸 Новый платеж:\n"
-            f"Студент: {context.user_data['name']} {context.user_data['surname']}\n"
-            f"Курс: {context.user_data['course']}\n"
-            f"Текущий баланс: {context.user_data['balance']} руб\n"
-            f"Скриншот: {y.get_download_link(f'/Платежи/{file_name}')}"
+        context.user_data["photo_url"] = y.get_download_link(f"/Фото студентов/{file_name}")
+        
+        keyboard = [[InlineKeyboardButton(course, callback_data=course)] for course in COURSES]
+        await update.message.reply_text(
+            "Выберите курс:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        
-        await notify_admin(context, admin_msg)
-        await update.message.reply_text("✅ Платеж отправлен на проверку!", reply_markup=PROFILE_KEYBOARD)
-        return ConversationHandler.END
-        
+        return COURSE
     except Exception as e:
-        logger.error(f"Ошибка обработки платежа: {str(e)}")
-        await update.message.reply_text("❌ Ошибка обработки платежа")
-        return ConversationHandler.END
+        logger.error(f"Ошибка загрузки фото: {str(e)}")
+        await update.message.reply_text("❌ Ошибка загрузки фото")
+        return PHOTO
 
 async def get_course(update: Update, context: CallbackContext) -> int:
     """Обработка выбора курса"""
     query = update.callback_query
     await query.answer()
     course = query.data
-    context.user_data["course"] = course
-    context.user_data["balance"] = -COURSES[course]
+    context.user_data.update({
+        "course": course,
+        "balance": -COURSES[course],
+        "user_id": query.from_user.id
+    })
 
-    # Сохраняем данные студента
     student_data = {
         "Имя": context.user_data["name"],
         "Фамилия": context.user_data["surname"],
         "Телефон": context.user_data["phone"],
         "Курс": course,
         "Баланс": -COURSES[course],
-        "user_id": query.from_user.id
+        "user_id": query.from_user.id,
+        "Ссылка на фото": context.user_data["photo_url"]
     }
     
     save_to_table(student_data, "/Таблицы/Студенты.xlsx")
     
-    # Уведомление администратору
-    await notify_admin(
-        context,
-        f"🎓 Новый студент:\n{student_data['Имя']} {student_data['Фамилия']}\n"
-        f"Курс: {course}\nБаланс: {student_data['Баланс']} руб",
-        y.get_download_link(f"/Фото студентов/{context.user_data['name']}_{context.user_data['surname']}.jpg")
-    )
-    
     await query.message.reply_text(
-        "Регистрация завершена! 🎉",
+        "✅ Регистрация завершена!",
         reply_markup=PROFILE_KEYBOARD
     )
+    
+    admin_msg = (
+        f"🎓 Новый студент:\n"
+        f"Имя: {student_data['Имя']}\n"
+        f"Фамилия: {student_data['Фамилия']}\n"
+        f"Телефон: {student_data['Телефон']}\n"
+        f"Курс: {course}\n"
+        f"Баланс: {student_data['Баланс']} руб"
+    )
+    await notify_admin(context, admin_msg, student_data["Ссылка на фото"])
+    
     return ConversationHandler.END
 
 def main() -> None:
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # Обработчик регистрации
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -214,7 +211,7 @@ def main() -> None:
     application.run_polling()
 
 if __name__ == "__main__":
-    # Создаем необходимые папки на Яндекс.Диске
+    # Создание папок на Яндекс.Диске
     for folder in ["Фото студентов", "Платежи", "Таблицы"]:
         if not y.exists(folder):
             y.mkdir(folder)
