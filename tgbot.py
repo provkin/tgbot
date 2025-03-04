@@ -73,6 +73,29 @@ def save_to_table(data, table_path):
     y.upload(temp_file, table_path, overwrite=True)
     os.remove(temp_file)
 
+# ... (импорты остаются без изменений)
+
+# Добавьте недостающие обработчики
+async def get_name(update: Update, context: CallbackContext) -> int:
+    context.user_data["name"] = update.message.text
+    await update.message.reply_text("Введите вашу фамилию:")
+    return SURNAME
+
+async def get_surname(update: Update, context: CallbackContext) -> int:
+    context.user_data["surname"] = update.message.text
+    await update.message.reply_text("Введите ваш номер телефона:")
+    return PHONE
+
+async def get_phone(update: Update, context: CallbackContext) -> int:
+    context.user_data["phone"] = update.message.text
+    await update.message.reply_text("Откуда вы узнали о школе?")
+    return SOURCE
+
+async def get_source(update: Update, context: CallbackContext) -> int:
+    context.user_data["source"] = update.message.text
+    await update.message.reply_text("Загрузите ваше фото:")
+    return PHOTO
+
 async def notify_admin(context, message, photo_url=None):
     """Отправляет уведомление администратору"""
     try:
