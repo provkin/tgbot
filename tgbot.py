@@ -90,7 +90,7 @@ async def notify_admin(context, message, photo_url=None):
     except Exception as e:
         logger.error(f"Ошибка уведомления админа: {str(e)}")
 
-# Основные обработчики
+# Обработчики команд
 async def start(update: Update, context: CallbackContext):
     user = update.message.from_user
     if user.id == ADMIN_ID:
@@ -102,31 +102,26 @@ async def start(update: Update, context: CallbackContext):
         return NAME
 
 async def get_name(update: Update, context: CallbackContext) -> int:
-    """Обработка имени"""
     context.user_data["name"] = update.message.text
     await update.message.reply_text("Введите вашу фамилию:")
     return SURNAME
 
 async def get_surname(update: Update, context: CallbackContext) -> int:
-    """Обработка фамилии"""
     context.user_data["surname"] = update.message.text
     await update.message.reply_text("Введите ваш номер телефона:")
     return PHONE
 
 async def get_phone(update: Update, context: CallbackContext) -> int:
-    """Обработка телефона"""
     context.user_data["phone"] = update.message.text
     await update.message.reply_text("Откуда вы узнали о школе?")
     return SOURCE
 
 async def get_source(update: Update, context: CallbackContext) -> int:
-    """Обработка источника информации"""
     context.user_data["source"] = update.message.text
     await update.message.reply_text("Загрузите ваше фото:")
     return PHOTO
 
 async def get_photo(update: Update, context: CallbackContext) -> int:
-    """Обработка фото"""
     try:
         photo = await update.message.photo[-1].get_file()
         local_path = f"temp/{update.message.message_id}.jpg"
@@ -144,7 +139,6 @@ async def get_photo(update: Update, context: CallbackContext) -> int:
         await update.message.reply_text(
             "Выберите курс:",
             reply_markup=InlineKeyboardMarkup(keyboard)
-        )
         return COURSE
     except Exception as e:
         logger.error(f"Ошибка загрузки фото: {str(e)}")
@@ -152,7 +146,6 @@ async def get_photo(update: Update, context: CallbackContext) -> int:
         return PHOTO
 
 async def get_course(update: Update, context: CallbackContext) -> int:
-    """Обработка выбора курса"""
     query = update.callback_query
     await query.answer()
     course = query.data
@@ -176,8 +169,7 @@ async def get_course(update: Update, context: CallbackContext) -> int:
     
     await query.message.reply_text(
         "✅ Регистрация завершена!",
-        reply_markup=PROFILE_KEYBOARD
-    )
+        reply_markup=PROFILE_KEYBOARD)
     
     admin_msg = (
         f"🎓 Новый студент:\n"
@@ -193,6 +185,11 @@ async def get_course(update: Update, context: CallbackContext) -> int:
 
 def main() -> None:
     application = ApplicationBuilder().token(TOKEN).build()
+
+    # Создание папок на Яндекс.Диске
+    for folder in ["Фото студентов", "Платежи", "Таблицы"]:
+        if not y.exists(f"/{folder}"):
+            y.mkdir(f"/{folder}")
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -211,9 +208,4 @@ def main() -> None:
     application.run_polling()
 
 if __name__ == "__main__":
-    # Создание папок на Яндекс.Диске
-    for folder in ["Фото студентов", "Платежи", "Таблицы"]:
-        if not y.exists(folder):
-            y.mkdir(folder)
-    
     main()
